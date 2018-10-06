@@ -1,0 +1,2 @@
+library('covisr')
+context('auxiliary')
