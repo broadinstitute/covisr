@@ -1,12 +1,3 @@
-#' Subgenome matching between contigs in A and D
-#' @export
-remove_subg <- function (contig_vec) {
-  contig_vec <- gsub('_[AD]', '', contig_vec)
-  contig_vec <- gsub('chr', '', contig_vec)
-  return(as.factor(as.numeric(contig_vec)))
-}
-
-
 #' @title reverse coordinates
 #' @description reverse coordinates to the reverse strand, for ease of
 #' comparing two subgenomes with different strand order
