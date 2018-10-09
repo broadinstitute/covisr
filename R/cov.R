@@ -3,27 +3,47 @@
 #' a) clean up background signal
 #' b) inverse positions of contigs on the reverse strand
 #' c) reorder subgenome contigs for ease of comparsion between subgenomes
-#' @param cov_tsv coverage tsv file
+#' @param cov_tsv coverage tsv file, either this paramter of cov_tsv must be 
+#' specified, if both specified, cov_tsv will be used. 
+#' @param cov_df coverage dataframe, either this paramter of cov_tsv must be 
+#' specified
 #' @param cutoff coverage cutoff for background noise
 #' @param suba contig orders for subgenome A
 #' @param subb contig orders for subgenome B, matching that of subgenome A
+#' @param sub_suffix subgenome suffix
 #' @param first_sample_idx first sample index (1-based index) in the input tsv,
 #' default 5
 #' @return coverage object
 #' @export
-cov.init <- function (cov_tsv, cutoff=0, prefix='output',
-                      reverse_contigs=NULL, suba=NULL, subb=NULL,
-                      first_sample_idx=5) {
+cov.init <- function (cov_tsv=NULL, cov_df=NULL, cutoff=0, prefix='output',
+                      reverse_contigs=NULL, suba=NULL, subb=NULL, 
+                      sub_suffix=NULL, first_sample_idx=5, preprocess=T) {
   cov = list()
-  cov$df <- read.csv(cov_tsv, sep='\t')
+  if (is.null(cov_tsv) & is.null(cov_df)) {
+    stop('Either cov_tsv or cov_df should be provided.')
+  } else if (!is.null(cov_tsv)) {
+    if (!is.null(cov_tsv) & !is.null(cov_df)) {
+      warning(paste("Both cov_tsv and cov_df is specified, cov_tsv will be",
+                    "used as input", sep=' '))
+    }
+    cov$df <- read.csv(cov_tsv, sep='\t')
+  } else {
+    cov$df <- cov_df
+  }
   cov$cutoff <- cutoff
   cov$prefix <- prefix
   cov$reverse_contigs <- reverse_contigs
-  cov$suba <- suba
-  cov$subb <- subb
   cov$n_samples <- dim(cov$df)[2] - first_sample_idx + 1
   cov$first_sample_idx <- first_sample_idx
+  cov$sub_suffix <- sub_suffix
+  if(!is.null(sub_suffix)) {
+    cov[[sub_suffix[1]]] <- suba
+    cov[[sub_suffix[2]]] <- subb
+  }
   class(cov) <- 'cov'   # create class
+  if (preprocess) {
+    cov <- cov.preprocess(cov)
+  }
   return(cov)
 }
 
@@ -35,11 +55,11 @@ cov.preprocess <- function(cov) {
   cov <- cov.add_bin_idx(cov)
   if(!is.null(cov$cutoff)) cov <- cov.filter_background(cov)
   if(!is.null(cov$reverse_contigs)) cov <- cov.reverse_idx(cov)
+  return(cov)
 }
 
 
 # Inverse bin index of contigs to the complement strand
-#' @export
 cov.reverse_idx <- function(cov) {
   .is.cov(cov)
   if(is.null(cov$reverse_contigs)) stop("reverse_contigs cannot be null.")
@@ -52,11 +72,9 @@ cov.reverse_idx <- function(cov) {
   return(cov)
 }
 
-
 #' Remove background noise
 #' @param cov object
 #' @return covobj
-#' @export
 cov.filter_background <- function (cov){
   .is.cov(cov)
   if (!all(c('sample_idx', 'cutoff') %in% names(cov))) {
@@ -71,11 +89,9 @@ cov.filter_background <- function (cov){
 #' Get sample index
 #' @param cov coverage list
 #' @return coverage obj
-#' @export
 cov.add_sample_idx <- function(cov) {
   .is.cov(cov)
-  cov$n_sample = dim(cov$df)[2] - cov$first_sample_idx + 1
-  cov$sample_idx = cov$first_sample_idx:cov$n_samples
+  cov$sample_idx = cov$first_sample_idx:(cov$n_samples+cov$first_sample_idx-1)
   return(cov)
 }
 
@@ -100,9 +116,21 @@ cov.get_contigs <- function(cov) {
 #' @return coverage object
 cov.add_bin_idx <- function(cov, reorder=T) {
   .is.cov(cov)
-  if (reorder) cov <- cov.reorder_contigs(cov)
+  if (reorder) {
+    if (cov.has_subgenome(cov)) {
+      cov <- cov.reorder_contigs(cov)
+    } else{
+      stop('Suba and subb should be both present for reorder')
+    }
+  } 
   cov$df$bidx = 1:dim(cov$df)[1]
   return(cov)
+}
+
+
+cov.has_subgenome <- function (cov) {
+  return(all(!is.null(cov$sub_suffix), !is.null(cov[sub_suffix[1]]),
+             !is.null(cov$sub_suffix[2])))
 }
 
 
@@ -110,13 +138,12 @@ cov.add_bin_idx <- function(cov, reorder=T) {
 #' @param cov coverage object
 #' @param contig_order order of contigs
 #' @return updated data.frame
-#' @export
 cov.reorder_contigs <- function (cov) {
   .is.cov(cov)
-  if(is.null(cov$suba) || is.null(cov$subb)){
+  if(!cov.has_subgenome(cov)){
     stop('Both suba and subb should be available in the coverage object!')
   }
-  contig_order <- c(cov$suba, cov$subb)
+  contig_order <- c(cov[[cov$sub_suffix[1]]], cov[[cov$sub_suffix[2]]])
   # sort data.frame according to given contig order
   cov$df = cov$df[order(match(cov$df$chr, contig_order)), ]
   return(cov)
